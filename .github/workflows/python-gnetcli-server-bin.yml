@@ -1,0 +1,104 @@
+name: python-gnetcli-server-bin
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-wheels:
+    name: Build ${{ matrix.name }} wheel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            goos: linux
+            goarch: amd64
+            wheel_plat: manylinux2014_x86_64
+            bin_name: gnetcli_server
+          - name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            wheel_plat: macosx_11_0_arm64
+            bin_name: gnetcli_server
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Install Python build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build wheel
+
+      - name: Build Go binary (${{ matrix.goos }}/${{ matrix.goarch }})
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p python/gnetcli_server_bin/_bin
+          # Build your Go command (adjust path if needed)
+          go build -trimpath -ldflags="-s -w" -o python/gnetcli_server_bin/_bin/${{ matrix.bin_name }} ./cmd/gnetcli_server
+          # Ensure executable bit on POSIX (harmless on Ubuntu even for darwin target)
+          chmod +x python/gnetcli_server_bin/_bin/${{ matrix.bin_name }}
+
+      - name: Verify helper module exports the binary
+        run: |
+          ls -l python/gnetcli_server_bin/_bin/
+          test -f python/gnetcli_server_bin/_bin/${{ matrix.bin_name }}
+
+      - name: Build wheel (tagged for ${{ matrix.wheel_plat }})
+        run: |
+          # Use pip wheel with --plat-name to force the platform tag
+          python -m pip wheel . --no-deps --wheel-dir dist --plat-name ${{ matrix.wheel_plat }}
+          ls -l dist
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  release:
+    name: Create/Update GitHub Release with wheels
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-collect
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find dist-collect -type f -name "*.whl" -exec cp {} release/ \;
+          ls -l release
+
+      - name: Create/Update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: release/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

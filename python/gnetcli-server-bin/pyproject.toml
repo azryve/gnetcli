@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gnetcli-server-bin"
+version = "0.1.0"
+description = "Prebuilt gnetcli_server Go binary packaged as a Python wheel"
+authors = [{ name = "You", email = "you@example.com" }]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+# No runtime deps needed
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gnetcli_server_bin*"]
+
+[tool.setuptools.package-data]
+gnetcli_server_bin = ["_bin/*"]  # ship the binary
